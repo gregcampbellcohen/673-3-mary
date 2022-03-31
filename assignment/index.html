@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset=utf-8 />
+    <title>US Unemployment Rates: 2001 to 2015</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.3.1/dist/leaflet.css" />
+    <link href='https://fonts.googleapis.com/css?family=Lato' rel='stylesheet' type='text/css'>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #6b6b6b;
+            font-family: Lato, sans-serif;
+            color: #0D0000;
+        }
+
+        h1 {
+            position: absolute;
+            z-index: 650;
+            top: 10px;
+            left: 15px;
+            padding: 8px 15px;
+            margin: 0;
+            color: whitesmoke;
+            font-size: 1.5em;
+            background: rgba(25, 25, 25, 0.8);
+            border-radius: 5px;
+        }
+
+        h2 {
+            display: inline-block;
+            color: #001323;
+        }
+
+        #map {
+            position: absolute;
+            width: 100%;
+            top: 0;
+            bottom: 0;
+        }
+
+        .leaflet-tooltip {
+			min-width: 140px;
+			font-size: 140%;
+			white-space: normal;
+		}
+
+        .legend {
+            padding: 6px 8px;
+            font-size: 1em;
+            background: rgba(75, 75, 75, 0.8);
+            color: whitesmoke;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            width: 160px;
+        }
+
+        .legend h3 {
+            font-size: 1.1em;
+            font-weight: bold;
+            line-height: 1em;
+            color: whitesmoke;
+            margin: 0;
+        }
+
+        .legend h3 span {
+            font-size: 1.3em;
+            margin: 10px 20px 0 0;
+        }
+
+        .legend ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 12px 4px 0;
+        }
+
+        .legend li {
+            height: 22px;
+        }
+
+        .legend span {
+            width: 30px;
+            height: 20px;
+            float: left;
+            margin-right: 10px;
+        }
+
+        #ui-controls {
+            width: 176px;
+            padding: 8px 25px 8px 15px;
+            background: rgba(75, 75, 75, 0.8);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+            color: whitesmoke;
+        }
+
+        #ui-controls .min {
+            float: left;
+        }
+
+        #ui-controls .max {
+            float: right;
+            margin-right: -15px;
+        }
+
+        .year-slider {
+            width: 100%;
+        }
+
+        label {
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+
+        footer {
+            padding: 6px 10%;
+            width: 80%;
+        }
+
+        p {
+            font-size: 1em;
+            color: #e8eaed;
+        }
+
+    </style>
+</head>
+
+<body>
+    <h1>US Unemployment Rates: 2001 &ndash; 2015</h1>
+    <div id="map"></div>
+    <div id="ui-controls">
+        <label><span class="min">2001</span><span class="max">2015</span>
+            <input type="range" min = "2001", max= "2015",
+                   value = "2001", step= "1", class="year-slider">
+    </label>
+    </div>
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/4.3.6/papaparse.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.3.1/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chroma-js/1.3.5/chroma.min.js"></script>
+    <script>
+
+        // map options
+        var options = {
+            scrollWheelZoom: true,
+            zoomSnap: .1,
+            dragging: true,
+            zoomControl: false
+        }
+
+        // create the Leaflet map
+        var map = L.map('map', options);
+
+        // request tiles and add to map
+        var tiles = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/toner-background/{z}/{x}/{y}.{ext}', {
+            attribution: 'Map tiles by <a href="https://stamen.com">Stamen Design</a>, <a href="https://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            subdomains: 'abcd',
+            ext: 'png',
+            opacity: 0.7
+        }).addTo(map);
+
+        // AJAX request for GeoJSON data
+        $.getJSON("data/us-counties.json", function(counties) {
+
+            // import and parse CSV
+            Papa.parse('data/us-unemployment-counties.csv', {
+
+                download: true,
+                header: true,
+                complete: function(data) {
+
+                    // pass data from CSV and GeoJSON to processData function
+                    processData(counties, data);
+
+                }
+            });
+        })
+        .fail(function() {
+            // error msg: data file failed to load
+            console.log("Error: Your data ain't there!");
+        });
+
+        function processData(counties, data) {
+
+            // loop through all the countries
+            for (var i = 0; i < counties.features.length; i++) {
+
+                // reference to county properties
+                var props = counties.features[i].properties;
+
+                // each of the CSV data rows
+                for (var j = 0; j < data.data.length; j++) {
+
+                    //if county fips code and data fips code match
+                    if (props.GEOID == data.data[j].STATE_FIP + data.data[j].COUNTY_FIP) {
+
+                        // re-assign the data for county as county's props
+                        counties.features[i].properties = data.data[j];
+
+                        // break from inner loop
+                        break;
+                    }
+                }
+            };
+
+            // setting classification breaks
+            // set empty array to store values
+            var rates = [];
+
+            // interate through counties
+            counties.features.forEach(function (county) {
+
+                // interate through counties' properties
+                for (var prop in county.properties) {
+
+                    // if attr prop is number (our data attributes are numeric years)
+                    if (+prop) {
+
+                        // push attr value into array
+                        rates.push(+county.properties[prop]);
+                    }
+                }
+            });
+
+            // set breaks in rates array for coloring 5 categories ()
+            var breaks = chroma.limits(rates, 'q', 5);
+            var colorize = chroma.scale(chroma.brewer.Reds).classes(breaks).mode('lab');
+
+            drawMap(counties, colorize);
+            drawLegend(breaks, colorize);
+
+        }
+
+        function drawMap(counties, colorize) {
+
+            // create Leaflet object with geometry data and add to map
+            var dataLayer = L.geoJson(counties, {
+                style: function(feature) {
+                    return {
+                        color: 'black',
+                        weight: 1,
+                        fillOpacity: 1,
+                        fillColor: '#1f78b4'
+                    };
+                },
+                onEachFeature: function(feature, layer) {
+                    // when mousing over a layer
+					layer.on('mouseover', function() {
+						// change the stroke color and bring that element to the front
+						layer.setStyle({
+							color: 'yellow'
+						}).bringToFront();
+					});
+					// on mousing off layer
+					layer.on('mouseout', function() {
+						// reset the layer style to its original stroke color
+						layer.setStyle({
+							color: 'black'
+						});
+					});
+
+                    // bind an empty tooltip to the layer
+                    layer.bindTooltip('', {
+                        sticky: true,
+                        tooltipAnchor: [200, 200]
+                    });
+                }
+            }).addTo(map);
+
+            // first set the zoom/center to the dataLayer's extent
+            map.fitBounds([
+                [50.133, -129.674],
+                [23.827, -66.571]
+            ]);
+
+            // then back the zoom level off a bit (since we're viewing the map full screen)
+            map.setZoom(map.getZoom() - .2);
+
+            // update map with colors via colorize
+            updateMap(dataLayer, colorize, '2001');
+            // add year slider
+            createSliderUI(dataLayer, colorize);
+
+        }
+
+        function updateMap(dataLayer, colorize, currentYear) {
+            // call dataLayer for update
+            dataLayer.eachLayer(function(layer) {
+                // define properties variable
+                var props = layer.feature.properties;
+                // adjust the coloring of counties based on the currentYear
+                layer.setStyle({
+                    fillColor: colorize(props[currentYear])
+                });
+                // define dynamic content of layer tooltip
+                var tooltipInfo = "<b>" + props["NAME"] +
+    								"</b></br>" +
+    								(props[String(currentYear)]) +
+    								"% Unemployed";
+                // update the tooltip content
+                layer.setTooltipContent(tooltipInfo)
+
+            });
+
+        }
+
+        function drawLegend(breaks, colorize) {
+
+            // generate legend via leaflet
+            var legendControl = L.control({
+                position: 'topright'
+            });
+
+            // add to Map
+            legendControl.onAdd = function(map) {
+                // create new DOM element for id=legend
+                var legend = L.DomUtil.create('div', 'legend');
+                return legend;
+            };
+
+            // add legent element to map
+            legendControl.addTo(map);
+
+            // add legend title
+            var legend = $('.legend').html('<h3><span>2001</span> Unemployment Rates</h3><ul>');
+
+            // loop through breaks
+            for (var i = 0; i < breaks.length - 1; i++) {
+
+                // set colors for breaks
+                var color = colorize(breaks[i]);
+
+                // create colored categories and their number values in ul
+                var classRange = '<li><span style="background:' + color + '"></span> ' +
+                    breaks[i].toLocaleString() + ' &mdash; ' +
+                    breaks[i + 1].toLocaleString() + '</li>'
+
+                $('.legend ul').append(classRange);
+            }
+
+            // close ul from above
+            legend.append("</ul>")
+
+        }
+
+        function createSliderUI(dataLayer, colorize) {
+
+            // create Leaflet control for slider
+            var sliderControl = L.control({
+                position: 'bottomleft'
+            });
+
+            // define the ui-control within the DOM
+            sliderControl.onAdd = function(map) {
+                // use the defined ui-control element
+                var slider = L.DomUtil.get("ui-controls");
+                // disable scrolling
+                L.DomEvent.disableScrollPropagation(slider);
+                // diable click events
+                L.DomEvent.disableClickPropagation(slider);
+
+                return slider;
+            };
+
+            // add control to map
+            sliderControl.addTo(map);
+
+            // add event for slider changes
+            $('.year-slider').on('input change', function() {
+                // event defined as currentYear
+                var currentYear = this.value;
+                // update legend header year
+                $('.legend h3 span').html(currentYear);
+                // update the map year
+                updateMap(dataLayer, colorize, currentYear)
+            });
+
+        }
+
+    </script>
+
+</body>
+
+</html>
